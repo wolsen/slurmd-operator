@@ -4,14 +4,12 @@
 
 """SlurmdCharm."""
 
-import json
 import logging
 from pathlib import Path
 from time import sleep
 
 from charms.fluentbit.v0.fluentbit import FluentbitClient
 from interface_slurmd import Slurmd
-from omnietcd3 import Etcd3AuthClient
 from ops.charm import CharmBase, CharmEvents
 from ops.framework import EventBase, EventSource, StoredState
 from ops.main import main
@@ -57,9 +55,6 @@ class SlurmdCharm(CharmBase):
             slurmctld_available=False,
             slurmctld_started=False,
             cluster_name=str(),
-            etcd_slurmd_pass=str(),
-            etcd_tls_cert=str(),
-            etcd_ca_cert=str(),
         )
 
         self._slurm_manager = SlurmManager(self, "slurmd")
@@ -217,31 +212,6 @@ class SlurmdCharm(CharmBase):
         # check etcd for hostnames
         self.on.check_etcd.emit()
 
-    @property
-    def etcd_use_tls(self) -> bool:
-        """Return whether TLS certificates are available."""
-        return bool(self.etcd_tls_cert)
-
-    @property
-    def etcd_tls_cert(self) -> str:
-        """Return TLS certificate."""
-        return self._stored.etcd_tls_cert
-
-    @etcd_tls_cert.setter
-    def etcd_tls_cert(self, tls_cert: str):
-        """Store TLS certificate."""
-        self._stored.etcd_tls_cert = tls_cert
-
-    @property
-    def etcd_ca_cert(self) -> str:
-        """Return CA TLS certificate."""
-        return self._stored.etcd_ca_cert
-
-    @etcd_ca_cert.setter
-    def etcd_ca_cert(self, ca_cert: str):
-        """Store CA TLS certificate."""
-        self._stored.etcd_ca_cert = ca_cert
-
     def _on_check_etcd(self, event):
         """Check if node is accounted for.
 
@@ -249,54 +219,7 @@ class SlurmdCharm(CharmBase):
         time, if so, emit slurmctld_started event, so the node can start the
         daemon.
         """
-        host = self._slurmd.slurmctld_address
-        port = self._slurmd.etcd_port
-
-        username = "slurmd"
-        password = self._stored.etcd_slurmd_pass
-
-        protocol = "http"
-        ca_cert = None
-        if self.etcd_use_tls:
-            protocol = "https"
-            ca_cert = Path("/etc/slurm/tls_cert.crt")
-            ca_cert.write_text(self.etcd_tls_cert)
-            ca_cert = Path.as_posix()
-        if self.etcd_ca_cert:
-            ca_cert = Path("/etc/slurm/ca_cert.crt")
-            ca_cert.write_text(self.etcd_ca_cert)
-            ca_cert = Path.as_posix()
-
-        logger.debug(f"## Connecting to etcd3 in {protocol}://{host}:{port}, {ca_cert}")
-        client = Etcd3AuthClient(
-            host=host,
-            port=port,
-            protocol=protocol,
-            ca_cert=ca_cert,
-            username=username,
-            password=password,
-        )
-
-        logger.debug("## Querying etcd3 for node list")
-        try:
-            v = client.get(key="nodes/all_nodes")
-            logger.debug(f"## Got: {v}")
-        except Exception as e:
-            logger.error(f"## Unable to connect to {host} to get list of nodes: {e}")
-            event.defer()
-            return
-
-        node_accounted = False
-        if v:
-            hostnames = json.loads(v[0])
-            logger.debug(f"### etcd3 node list: {hostnames}")
-            if self.hostname in hostnames:
-                self.on.slurmctld_started.emit()
-                node_accounted = True
-
-        if not node_accounted:
-            logger.debug("## Node not accounted for. Deferring.")
-            event.defer()
+        logger.info("Called _on_check_etcd")
 
     def _on_slurmctld_unavailable(self, event):
         logger.debug("## Slurmctld unavailable")
@@ -428,10 +351,6 @@ class SlurmdCharm(CharmBase):
     def cluster_name(self, name: str):
         """Set the cluster-name."""
         self._stored.cluster_name = name
-
-    def store_etcd_slurmd_pass(self, password: str):
-        """Save the slurmd password for etcd in the stored state."""
-        self._stored.etcd_slurmd_pass = password
 
 
 if __name__ == "__main__":

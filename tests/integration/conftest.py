@@ -19,7 +19,7 @@ import pathlib
 
 import pytest
 from _pytest.config.argparsing import Parser
-from helpers import ETCD, NHC
+from helpers import NHC
 from pytest_operator.plugin import OpsTest
 
 
@@ -42,7 +42,12 @@ async def slurmd_charm(ops_test: OpsTest):
     return charm
 
 
+@pytest.fixture(scope="module")
+async def slurmctld_charm(ops_test: OpsTest):
+    """Build slurmctld charm to use for integration tests."""
+    return await ops_test.build_charm("../slurmctld-operator")
+
+
 def pytest_sessionfinish(session, exitstatus) -> None:
     """Clean up repository after test session has completed."""
-    pathlib.Path(ETCD).unlink(missing_ok=True)
     pathlib.Path(NHC).unlink(missing_ok=True)
